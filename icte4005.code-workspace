@@ -1,0 +1,11 @@
+{
+  "folders": [
+    { "name": "Master - orchestration", "path": "master" },
+    { "name": "Conveyor - stepper", "path": "conveyor" },
+    { "name": "Sensing - reeds and andon", "path": "sensing" }
+  ],
+  "extensions": {
+    "recommendations": ["platformio.platformio-ide"]
+  }
+}
+
