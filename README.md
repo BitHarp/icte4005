@@ -1,62 +1,51 @@
-# ICTE4005 conveyor project
+# ICTE4005 magnetic-puck conveyor
 
-Three independent PlatformIO projects, one per Arduino Uno (classic ATmega328P / R3).
+Three Arduino Unos coordinate a magnetic-puck detection and return demonstration. Load one puck before the reeds. Reed 1 records arrival; reed 2 causes a magnetic-detection stop. After operator acknowledgement, reverse past reed 1 and run a calibrated discharge overrun. Then stop and prepare the next cycle. This demonstrates distributed control, not material identification or verified automatic sorting.
 
-```text
-master/      Orchestration, target/current status display, optional buzzer
-conveyor/    Five-wire stepper and existing g/s/f/l motor controls
-sensing/     Reed switches, magnetic-puck detection and status LEDs
+No reed activity means continue until the operator stops. Stop pauses the phase; Resume retains progress. Missing an expected reed causes a latched fault. Remove all pucks and restart all three boards before a new cycle. Reed 1 sits near the loading/discharge edge. Step counting estimates discharge travel; it does not verify ejection.
+
+## Boards and documents
+
+- [Master](master/README.md): process coordination, polling, travel checks and Serial target/current reporting.
+- [Conveyor](conveyor/README.md): fixed-speed forward/reverse stepper motion and issued-step feedback.
+- [Sensing](sensing/README.md): two reeds, forward/return event retention and andon LEDs.
+- [Shared contract](CONTRACT.md): exact messages, state values, guards, fault rules and calibration inputs.
+
+```mermaid
+flowchart LR
+    Operator -->|Start / Stop / Resume / Ack| Master[Master Uno + Serial monitor]
+    Master <-->|Commands / status| Conveyor[Conveyor Uno]
+    Master <-->|Commands / status| Sensing[Sensing Uno]
+    Conveyor --> Driver[Driver + five-wire stepper]
+    Reeds[Reed switches] --> Sensing
+    Sensing --> Andon[Status LEDs]
 ```
 
-Each folder contains its own `platformio.ini` and `src/main.cpp`. Open an individual
-folder in VS Code with PlatformIO, or open `icte4005.code-workspace` for all three.
+## Current implementation
 
-## Current state
+All three projects contain scaffolds only. They print their role at 9600 baud; no motor, sensing, screen or I2C behaviour is implemented. Import and preserve the working sketches before integration. Do not upload these scaffolds over working demonstration firmware.
 
-These are minimal firmware scaffolds only. They print the board role at 9600 baud and do
-not drive the motor, initialise the display, read reeds, or implement I2C commands.
-Do not upload them as replacements for working demonstration firmware yet.
+The docs describe a proposed interface, not tested behaviour. They replace the earlier complex Barbot contract as this repository's planning reference. Protocol details belong in `CONTRACT.md`; wiring, libraries and local operation belong in each subsystem README.
 
-The existing working sketches and their libraries will be brought in first;
-the small shared command/state interface will then be aligned to that behaviour.
-The earlier complex contract from the Barbot planning folder is not implemented here.
+## PlatformIO
 
-## Build and monitor
-
-From this repository root:
+Open [icte4005.code-workspace](icte4005.code-workspace) or an individual board folder in VS Code. Each folder has its own `platformio.ini` and `src/main.cpp`, targeting classic Uno/R3 (`uno`, Arduino framework, AVR platform 5.0.0).
 
 ```sh
 pio run -d master
 pio run -d conveyor
 pio run -d sensing
-```
-
-For a connected board, explicitly select its port (especially with several Unos):
-
-```sh
 pio device list
 pio run -d conveyor -t upload --upload-port /dev/cu.YOUR_BOARD
 pio device monitor -d conveyor --port /dev/cu.YOUR_BOARD --baud 9600
 ```
 
-Replace `conveyor` with the relevant project and `YOUR_BOARD` with its actual port.
-No upload port is hard-coded. PlatformIO's AVR platform is pinned to 5.0.0 in all
-three projects; the framework is Arduino and the board ID is `uno`.
+Replace the project and port as needed. No upload port is hard-coded. When importing an `.ino` into `main.cpp`, add `Arduino.h` and required forward declarations; keep one `setup()` and `loop()` per project. Add actual external libraries to that project's `lib_deps` and preserve proven pins and baud rate.
 
-### Local validation (11 October 2026)
+Validation on 11 October 2026: all three scaffold projects compile successfully with the standard PlatformIO AVR toolchain. The earlier compiler launch issue is resolved. No hardware upload, I2C integration or mechanical operation is verified.
 
-All three PlatformIO configurations parse successfully. Compilation was attempted
-but blocked by the installed x86_64 AVR compiler failing to execute on the arm64
-Mac (`Bad CPU type in executable`). A successful firmware build has not yet been
-verified. Resolve the local compiler compatibility before uploading; no system
-toolchain changes or hardware uploads were performed during scaffolding.
+## Scope and remaining work
 
-## Importing the working sketches
+V1 uses fixed speed, two reeds, status LEDs and a Serial operator interface. Screen, buzzer, Teleplot formatting and adjustable speed are stretch work. No non-magnetic classification or automatic no-detection timeout is included. Uptime supports feedback diagnostics; issued steps support estimated travel.
 
-1. Replace the relevant `src/main.cpp` scaffold with the working sketch, adding
-   `#include <Arduino.h>` and forward declarations where needed for C++ compilation.
-2. Keep only one `setup()` and one `loop()` per project. Alternatively use a single
-   `.ino` file under `src/` and remove that project's scaffold `main.cpp`.
-3. Add the sketch's actual external libraries under `lib_deps` in its own
-   `platformio.ini`. Built-in Arduino libraries such as Wire need no registry dependency.
-4. Preserve proven pins, baud rate and motor behaviour before adding I2C integration.
+The operating sequence is agreed. Remaining inputs are the working motor sketch, hardware/library details and measured calibration values. Each subsystem README defines its owner's deliverables and verification evidence. Protocol rules belong in the shared contract; local implementation details belong in subsystem READMEs; project scope belongs here.
