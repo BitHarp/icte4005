@@ -1,42 +1,36 @@
-# Sensing Arduino — two reeds and andon
+# Sensing Arduino — two reeds and local LEDs
 
 [Shared contract](../CONTRACT.md) · [Build instructions](../README.md#platformio)
 
-Scaffold only. Place reed 1 near the loading/discharge end and reed 2 at the forward magnetic stopping point. Confirm pins, polarity, exposure and debounce on the assembled conveyor.
+Seed code is in place. Set the pins in `src/main.cpp` to the assembled wiring. Place reed 1 near the loading/discharge end and reed 2 at the forward magnetic stopping point. Confirm polarity, exposure and debounce on the assembled conveyor.
 
-## Work package and deliverables
+## What this board owns
 
-Deliver non-blocking sampling/debounce, direction-aware retained events, state-driven LEDs, Wire status and latched faults. Provide reed/LED wiring, resistors, sample interval, measured debounce and placement. Demonstrate reliable detection at the fixed speed. The master checks missing arrival and requests red andon with `!`; this board does not count motor steps.
+Debounce, a cumulative closing-edge count per reed, its LEDs from the live reed levels, and its own contact watchdog. It accepts no commands. It reports OK or FAULT, a fault reason, uptime, the live mask and the two edge counts. It holds no process state. The master decides what an edge means from the direction the belt is running.
 
-## States keyed to commands and events
+## Code layout
+
+- `lib/sensing_logic`: debounce, counters, LED decision and the reply encoder. Pure C++, so the master's host tests run it directly.
+- `src/main.cpp`: pins, sample interval, the Wire link and the publish loop.
+- `../shared/slave_link.h`: Wire slave boilerplate shared with the conveyor board.
+
+The owner sets pins, sample interval and debounce time. Counters only increase and wrap; never clear them. Sample inputs independently of master polling and keep sampling in every state.
+
+## LEDs
+
+Green while reed 1 reads closed. Amber while reed 2 reads closed. Red while the board is in FAULT. Off otherwise. The LEDs show the local reading only. Process phase is shown on the master andon.
+
+## States
 
 ```mermaid
 stateDiagram-v2
-    [*] --> READY: boot / off
-    READY --> ARMED: a and clear reeds / green
-    ARMED --> ENTRY_SEEN: reed 1 / retain entry
-    ARMED --> FAULT: reed 2 first or simultaneous / red
-    ENTRY_SEEN --> MAGNETIC: reed 2 / amber
-    MAGNETIC --> RETURNING: d / green
-    RETURNING --> RETURNING: reed 2 activity / no classification
-    RETURNING --> RETURN_SEEN: reed 1 / retain return
-    RETURN_SEEN --> READY: c and clear reeds / off
-    READY --> FAULT: fault or ! / red
-    ARMED --> FAULT: fault or ! / red
-    ENTRY_SEEN --> FAULT: fault or ! / red
-    MAGNETIC --> FAULT: fault or ! / red
-    RETURNING --> FAULT: fault or ! / red
-    RETURN_SEEN --> FAULT: fault or ! / red
-    FAULT --> FAULT: commands or inputs / retain fault
-    FAULT --> [*]: board restart required
+    [*] --> OK: boot
+    OK --> OK: reed edges / count
+    OK --> FAULT: contact lost / red
+    FAULT --> FAULT: inputs / keep counting
+    FAULT --> [*]: board reset required
 ```
 
-Reed openings do not erase events. Pause does not disarm sensing. No sensor PAUSED state is needed: retain events during deceleration and pauses. Repeated commands must not erase progress. `c` clears a completed healthy discharge, never FAULT. Report live inputs even in READY and FAULT.
+## Verification
 
-Reed 2 may already be active when return mode begins. Its return activity does not create a new detection. Detect a new reed 1 activation as the discharge reference. The master guards return start with reed 1 clear.
-
-## Implementation and verification
-
-Debounce independently of master polling. Retain short valid events and publish one coherent snapshot. Do not use sampling or LED delays in Wire callbacks. LEDs follow sensing state; no independent LED command is needed.
-
-Record tests for short exposure, held/repeated contacts, simultaneous activation, wrong forward order, reverse passage, pause-time events, healthy clear, contact timeout and retained faults. Non-magnetic pucks produce no claimed presence or material result. A disconnected normally-open reed can look inactive. Actual ejection is not independently confirmed.
+Record short exposure at the fixed speed, held and repeated contacts, both reeds closed, reverse passage, contact timeout and retained fault. Measure the debounce needed on the assembled belt. A disconnected normally-open reed looks open. Non-magnetic pucks produce no edges and no claim about the puck.

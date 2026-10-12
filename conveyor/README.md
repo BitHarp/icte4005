@@ -2,13 +2,19 @@
 
 [Shared contract](../CONTRACT.md) · [Build instructions](../README.md#platformio)
 
-Scaffold only. Import the working motor sketch and preserve its library and wiring. Confirm reverse operation before integration. Do not upload this scaffold over working demonstration firmware.
+Seed code is in place. Import the proven motor library, pins and speed from the working sketch into the motor section of `src/main.cpp`. Confirm reverse operation before integration. Do not upload the seed over working demonstration firmware without checking the motor section first.
 
-## Work package and deliverables
+## What this board owns
 
-Deliver fixed-speed forward/reverse motion, responsive stop, cumulative issued-step counting, Wire commands/status and a latched contact watchdog. Provide library/version, driver, pins, supply, step unit, fixed speed and idle-coil behaviour. Measure steps/mm and stop response with the assembled belt.
+Stepping, direction, a cumulative step count and its own contact watchdog. It accepts `g`, `b` and `s`. It reports STOPPED, FORWARD, REVERSE or FAULT, a fault reason, uptime and the step count. It holds no process state. The master decides when movement starts and ends.
 
-The master decides when movement starts and ends. This board does not sample reeds or complete finite moves automatically. Count each emitted library step once, positively in either direction. Do not reset the count on go, stop or reversal. Status describes software drive output, not measured belt movement.
+## Code layout
+
+- `lib/conveyor_logic`: the state machine and the reply encoder. Pure C++, so the master's host tests run it directly.
+- `src/main.cpp`: the motor section with three hooks, the Wire link and the publish loop.
+- `../shared/slave_link.h`: Wire slave boilerplate shared with the sensing board.
+
+The owner changes the motor section only: library, pins, steps per revolution and step interval. Keep the hooks: a step is emitted only when `motor()` asks for one, and every emitted step calls `countStep()` once. Do not reset the count on stop or reversal.
 
 ## States keyed to commands
 
@@ -19,20 +25,18 @@ stateDiagram-v2
     STOPPED --> REVERSE: b
     FORWARD --> FORWARD: g / no restart
     REVERSE --> REVERSE: b / no restart
-    FORWARD --> STOPPED: s / stop output
-    REVERSE --> STOPPED: s / stop output
+    FORWARD --> STOPPED: s
+    REVERSE --> STOPPED: s
     STOPPED --> STOPPED: s
-    STOPPED --> FAULT: fault or !
-    FORWARD --> FAULT: fault or ! / stop output
-    REVERSE --> FAULT: fault or ! / stop output
+    STOPPED --> FAULT: contact lost
+    FORWARD --> FAULT: contact lost / stop output
+    REVERSE --> FAULT: contact lost / stop output
     FAULT --> FAULT: commands / retain fault
-    FAULT --> [*]: board restart required
+    FAULT --> [*]: board reset required
 ```
 
-Reject direct reversal. Require stop confirmation before the opposite direction command. There is no I2C speed or reset command. Existing Serial `g/s/f/l` may remain in an explicit standalone bench mode. Bench commands must not compete with master commands; bus loss must not select bench mode.
+Direct reversal is rejected: the master confirms STOPPED before the opposite command. There is no speed or reset command. Existing Serial `g/s/f/l` may remain in an explicit standalone bench mode; it must not compete with master commands, and bus loss must not select bench mode.
 
-## Implementation and verification
+## Verification
 
-Keep stepping non-blocking. Wire receive callbacks queue commands; request callbacks return prepared status. Stop/fault requests take priority over older pending motion. Protect multi-byte snapshots from interrupt access. Apply the shared watchdog while moving and stopped after first contact.
-
-Demonstrate both directions, responsive stop, repeated-command behaviour, rejected direct reversal, continuous step count, contact timeout and reset-only recovery. Measure stop latency under load. No encoder or stall detection is assumed. Adjustable speed is separate stretch work.
+Demonstrate both directions, responsive stop, repeated-command behaviour, rejected direct reversal, continuous step count, contact timeout and reset-only recovery. Measure stop latency under load and steps per millimetre on the assembled belt. No encoder or stall detection is assumed.
